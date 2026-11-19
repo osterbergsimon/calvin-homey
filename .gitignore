@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Homey CLI build output and generated files
+.homeybuild/
+/env.json
+
+# TypeScript and test output
+*.tsbuildinfo
+coverage/
+dist/
+
+# Logs
+npm-debug.log*
+*.log
+
+# Local environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
