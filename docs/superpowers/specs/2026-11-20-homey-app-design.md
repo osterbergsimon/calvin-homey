@@ -19,7 +19,8 @@ Sources:
 - Athom: the [Homey Apps SDK](https://apps.developer.homey.app/) docs and the
   [SDK v3 reference](https://apps-sdk-v3.developer.homey.app/).
 
-**User-facing text.** Every word a person sees comes from the UI spec, verbatim: pairing and repair
+**User-facing text.** Every word a person sees comes from the UI spec, verbatim (the text; its
+§9 string ids are suggestions, and the plan uses them plus the few it adds): pairing and repair
 views, device, driver and capability names, insights titles, flow card titles and hints, the app
 settings page, warnings, unavailable messages and thrown errors. This design names each place and
 points at the UI spec section; it does not restate or change the copy. Where the UI spec leaves a
@@ -86,13 +87,15 @@ again.
   every `GET` do not count.
 - **Failed key attempts are rate-limited per IP address** (`api_key_limiter`): a Homey that keeps
   sending a revoked key locks itself out. The app stops polling on the first refusal.
-- **Calvin's Host check** accepts an IP address, a single-label name, `localhost`, names ending in
-  `.local`, `.lan`, `.home`, `.home.arpa`, `.internal` or `.localdomain`, and names in its
-  allowed-hosts setting. Any other name gets a plain-text `400`. Bearer requests skip the Origin
+- **Calvin's Host check** accepts an IP address, a single-label name, `localhost` and
+  `*.localhost`, names ending in `.local`, `.lan`, `.home`, `.home.arpa`, `.internal` or
+  `.localdomain`, and names in its allowed-hosts setting (`*` there turns the check off). Any other
+  name gets a plain-text `400`. Bearer requests skip the Origin
   check.
 - **Homey runtime**: Node.js 22, SDK v3, the `homey` module provided at runtime, timers through
   `this.homey.setInterval` / `setTimeout`. An unavailable device blocks its capabilities and flow
-  actions.
+  actions. No manifest option that needs newer firmware than 12.9.0 (for example `uiState`, which
+  needs 13.5.0).
 - **Ids are forever.** The app id `xyz.wholab.calvin`, the driver id, capability ids and flow card
   ids break flows if changed; a device's `data` cannot change after pairing.
 - **Public repo**, GPL-3.0. No household data anywhere; tests never contact a real Homey or Calvin.
@@ -129,7 +132,8 @@ A Homey Compose app; `app.json` is generated and committed, never edited by hand
 .homeycompose/
   app.json                      id xyz.wholab.calvin, sdk 3, platforms ["local"],
                                 compatibility ">=12.9.0", no permissions, brandColor,
-                                api: getConnection, putConnection (not public)
+                                api: getConnection GET /connection,
+                                     putConnection PUT /connection (not public)
   capabilities/calvin_held.json
   capabilities/alarm_calvin_offline.json
   flow/actions/all_on.json, all_off.json, all_back_to_schedule.json
@@ -179,7 +183,9 @@ assets/                         app icon and images
 | `button.back_to_schedule` | system `button`, `maintenanceAction: true` | none | Yes: sends `{"power":"schedule"}` |
 
 Titles, `titleTrue` / `titleFalse`, insights titles, the maintenance button's `title` and `desc`:
-UI §4.1. `onoff` keeps Homey's own title; only its insights titles are set.
+UI §4.1. `onoff` keeps Homey's own title; only its insights titles are set, in the driver's
+`capabilitiesOptions`. Homey generates no condition cards for the custom booleans, hence
+`schedule_paused` and `is_offline` below.
 If Homey shows Yes/No instead of `titleTrue` / `titleFalse` for a custom boolean, `calvin_held`
 uses the UI spec's fallback title (UI §4.1).
 
@@ -213,22 +219,35 @@ Ids, titles, inverted forms and hints: UI §5, verbatim. Every device card takes
 | `back_to_schedule` | device action | `PUT {"power":"schedule"}` |
 | `all_on`, `all_off`, `all_back_to_schedule` | app actions | Loop the paired screens |
 
-The app actions send one `PUT` per paired, available screen, in sequence, and continue past a
-failure. If any fail, the card throws UI §5.3's partial-failure message with *n* and *total*; the
-screens that worked stay changed. With more than 30 screens Calvin's change limit can stop the
-rest; they count as failed.
+The app actions send one `PUT` per paired screen that is available, in sequence, and continue
+past a failure. *total* is every paired screen; an unavailable screen gets no request and counts as
+failed, because it was not changed (my call). If any failed, the card throws UI §5.3's
+partial-failure message with *n* and *total*; the screens that worked stay changed. No paired
+screens: the card succeeds and sends nothing. With more than 30 screens Calvin's change limit can
+stop the rest; they count as failed.
 
 ### Pairing, repair and the settings page
 
 All three use the same [connection check](#connection-check) and the same messages (UI §3.1).
 
 **Pair views** (`driver.compose.json` `pair`): `connect` (custom) → `list_devices` (system) →
-`add_devices` (system). If a connection already exists, `onPair` skips `connect` and shows
-`list_devices` at once (UI §3).
+`add_devices` (system). If a connection already exists and is not *key refused* or *too old*,
+`onPair` calls `session.showView('list_devices')` at once, skipping `connect` (UI §3). A refused or
+too-old connection shows `connect` instead, prefilled with the saved address; its check replaces
+that connection under the same `connectionId`, so existing screens follow (my call). An
+unreachable one goes to the list, which throws UI §3.2's unreachable line.
 
-**Repair views**: `connect` in repair mode: title, note, prefilled address, empty key, **Save**
-(UI §3.3). A repair on any screen replaces the connection for every screen of that Calvin, clears a
-*key refused* state, and runs a poll at once. Repair cannot bring back a removed screen (UI §3.3).
+**When the connection is saved** (my call): on a successful check, so `list_devices` can use it.
+When the pairing session disconnects, a connection that no device uses is deleted again, so an
+abandoned pairing leaves no key on the Homey.
+
+**Repair views**: the same `connect` view (`drivers/screen/pair/connect.html`, listed under
+`repair` with the same id) in repair mode: title, note, prefilled address, empty key, **Save**
+(UI §3.3). On load the view emits `init`; the driver answers `{ mode: "pair" | "repair",
+address? }`, so one file serves both (my call). A repair on any screen, in this order, saves the
+new address and key under the same `connectionId` (clearing *key refused*), sets the poller back to
+ok, and runs a poll at once; that poll's answers then follow the normal state rules. Repair cannot
+bring back a removed screen (UI §3.3).
 
 **The `connect` view** (UI §3.1 elements, layout and messages) checks for an empty address and an
 empty key in the view itself, then emits one session event, `connect`, with `{ address, key }`. In
@@ -270,7 +289,9 @@ id. Every request sends the key as `Authorization: Bearer`. Nothing in it change
 3. **Calvin too old?** `GET /api/kiosks/<probe>/screen-power`, where `<probe>` is a fresh random id
    that matches Calvin's id pattern (`[A-Za-z0-9._-]{1,64}`) and is not in the list, such as
    `homey-check-<12 hex digits>`. A `404` whose body is `{"detail": "Unknown kiosk"}` means this
-   Calvin has screen power. Any other `404`, or a `405`, → *too old*. As a second signal, a
+   Calvin has screen power. Any other `404`, a `405`, or a `200` that is not a `ScreenPowerView`
+   → *too old*. (Calvin's SPA fallback skips `api/` paths and answers `404` there, per
+   `backend/app/services/frontend_static.py`, so an old Calvin should answer `404 Not found`.) As a second signal, a
    non-empty screen list whose entries lack `powerHold` and `agentHolds` → *too old* too (UI §7).
    This is the exact check the UI spec left to this design; the owner confirms it on a real old
    Calvin if one is at hand (plan, owner step).
@@ -278,7 +299,8 @@ id. Every request sends the key as `Authorization: Bearer`. Nothing in it change
    `{"power": "schedule"}`. Calvin's route policy runs before the handler, and the handler never
    creates a screen for an unknown id (screen-power design, decision 4), so `404 Unknown kiosk`
    means yes. `401` or `403` → *key refused* (a plain read key gets `403 insufficient_scope`).
-5. Anything else at any step → *unknown* (`Homey.alert`).
+5. Anything else at any step → *unknown* (`Homey.alert`), including a `429` (Calvin's lockout after
+   failed keys from this address; UI §3.1's "try again in a moment" fits it).
 
 The check cannot tell a `screens.power` key from an admin key; that warning waits for Calvin's
 "who am I" read (UI §3.1).
@@ -319,6 +341,14 @@ The check cannot tell a `screens.power` key from an admin key; that warning wait
   answer requested before the latest command was sent is dropped. **HIGH RISK**: the race the
   research flagged.
 - Polls send the key, so a revoked key shows within one round.
+- **A failed round** is one in which no screen got an answer from Calvin (network error, timeout,
+  `5xx`, Host `400`). Any Calvin answer, a `404` for one screen included, makes the round good. A
+  skipped round counts as neither (my call).
+- **`429` on a poll** (the failed-key lockout, since `GET`s never hit the change limit): the round
+  stops, the poller waits `Retry-After` seconds before the next round, and the round counts as
+  neither good nor failed (my call).
+- A command increments the device's counter when it is sent, whether it then succeeds or fails; a
+  poll dropped because of a failed command is harmless, the next round reads the truth.
 - `GET /api/kiosks` is not polled; only the connection check reads it.
 
 **Connection states** (applied to every device of the connection; messages are UI §7):
@@ -343,7 +373,8 @@ still unavailable and the thrown errors carry the text (plan, owner step).
 
 ### Commands and errors
 
-- `onoff` listener → `PUT {"power": "on"|"off"}`; `back_to_schedule` card, maintenance button →
+- `onoff` listener → `PUT {"power": "on"|"off"}`, always, even when `desiredOn` already matches:
+  setting it means "hold", and Calvin writes nothing when nothing changes; `back_to_schedule` card, maintenance button →
   `{"power": "schedule"}`. Success: the answer is applied. Failure: the listener throws the UI §7
   "thrown" text, and Homey reverts the tile.
 - Errors are typed in `errors.mts`; each carries a UI spec string id and tokens, never a raw
@@ -363,7 +394,8 @@ still unavailable and the thrown errors carry the text (plan, owner step).
 **HIGH RISK.** `calvin-client.mts`, no Homey imports, no runtime dependencies.
 
 - Node's built-in `fetch`. Base URL from the connection; paths from fixed templates, the screen id
-  checked against Calvin's id pattern and `encodeURIComponent`-ed.
+  checked against Calvin's id pattern and `encodeURIComponent`-ed. An id made only of dots (`.`,
+  `..`) matches Calvin's pattern but would change the path, so the client refuses it (my call).
 - Headers: `Authorization: Bearer <key>`, `Accept: application/json`, `Content-Type:
   application/json` on `PUT`. No `Origin`, no cookies.
 - `redirect: "manual"`: a `3xx` is an error, so the key never goes to another host and never drops
@@ -444,6 +476,24 @@ What comes later, and what v1 must not paint into a corner. Copy for each is in 
 | **Several Calvin servers** | A server picker | `connections` is a map; devices carry `connectionId`; one poller per connection. |
 | **Who set the hold** | Calvin already returns `by` | A second sensor capability (UI §8); `screen-state.mts` already receives `by`. |
 | **Translations** | Strings per language | Every string is a translation object or a `locales/` key (UI §9). |
+
+## Builder check
+
+A fresh reader went through this design as the builder (24 points). How they were sorted:
+
+- **Answered in the design** (the answer is now in the section named): `api` route methods and
+  paths (App structure); skipping `connect` (Pair views); cost of one `GET` per screen (Polling);
+  the stale-poll counter (Polling); custom booleans get no generated conditions (Capabilities);
+  the SPA fallback on an old Calvin (Connection check, step 3); insights titles in
+  `capabilitiesOptions` (Capabilities); which string ids to use (User-facing text); `setWarning`
+  and `setUnavailable` text, checked on the owner's Homey (plan, Part 6).
+- **Minor, settled as my call** (marked "my call" where it is written): `429` on a poll, a command
+  and the check; one view file for pairing and repair; the order of a repair; when the connection
+  is saved and how an abandoned pairing cleans up; pairing while the connection is refused or too
+  old; what makes a round failed; how "all screens" counts unavailable screens; sending `on` when
+  the screen is already planned on; screen ids made only of dots; the Host check list; no manifest
+  option newer than 12.9.0.
+- **For the owner**: below.
 
 ## Open questions for the owner
 
