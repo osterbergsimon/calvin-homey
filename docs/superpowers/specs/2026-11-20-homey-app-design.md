@@ -294,7 +294,7 @@ The check cannot tell a `screens.power` key from an admin key; that warning wait
 - v1 holds at most one entry. The map shape lets a second Calvin, or an mDNS `serverId`, be added
   without touching devices.
 - Only `connection-store.mts` reads or writes it, and it hands the key only to
-  `calvin-client.mts`. Everything else sees `{ connectionId, address, keyHint, keyRefused }`.
+  `calvin-client.mts` and to the connection check (a settings save that keeps the saved key). Everything else sees `{ connectionId, address, keyHint, keyRefused }`.
 - `keyRefused` is persisted, so a restart does not send a refused key again; it clears only
   through repair or the settings page (UI §7).
 - When the last device of a connection is deleted, the connection is deleted with it, so the key
