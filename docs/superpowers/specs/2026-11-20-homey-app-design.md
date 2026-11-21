@@ -15,10 +15,9 @@ Sources:
   (Calvin branch `research/homey-app`). This page records what was decided and how the app is
   built; it does not repeat why each alternative lost.
 - **UX and copy spec by the Calvin design lead**:
-  [Calvin app for Homey: UX and copy](https://github.com/osterbergsimon/calvin/blob/design/homey-modes/docs/design/2026-11-20-homey-app.md)
-  (revised for the screen power modes in Calvin PR 398, branch `design/homey-modes`; it moves to
-  `develop` when merged). Called **the UI spec** below, cited as *UI §n*. Its section numbers are
-  those of the revised spec.
+  [Calvin app for Homey: UX and copy](https://github.com/osterbergsimon/calvin/blob/develop/docs/design/2026-11-20-homey-app.md)
+  (on Calvin's `develop`, revised for the screen power modes in Calvin PR 398). Called **the UI
+  spec** below, cited as *UI §n*. Its section numbers are those of the revised spec.
 - Calvin's side: [Home automation: turn screens on and off](https://github.com/osterbergsimon/calvin/blob/develop/docs/integrations/HOME_AUTOMATION.md),
   the [screen power mode design](https://github.com/osterbergsimon/calvin/blob/develop/docs/superpowers/specs/2026-11-21-screen-power-mode-design.md)
   (decisions 1 to 8: the modes, the command, the 409s, the answer), its
