@@ -15,9 +15,10 @@ Sources:
   (Calvin branch `research/homey-app`). This page records what was decided and how the app is
   built; it does not repeat why each alternative lost.
 - **UX and copy spec by the Calvin design lead**:
-  [Calvin app for Homey: UX and copy](https://github.com/osterbergsimon/calvin/blob/design/homey-app/docs/design/2026-11-20-homey-app.md)
-  (Calvin PR 377, branch `design/homey-app`; it moves to `develop` when merged). Called **the UI
-  spec** below, cited as *UI §n*.
+  [Calvin app for Homey: UX and copy](https://github.com/osterbergsimon/calvin/blob/design/homey-modes/docs/design/2026-11-20-homey-app.md)
+  (revised for the screen power modes in Calvin PR 398, branch `design/homey-modes`; it moves to
+  `develop` when merged). Called **the UI spec** below, cited as *UI §n*. Its section numbers are
+  those of the revised spec.
 - Calvin's side: [Home automation: turn screens on and off](https://github.com/osterbergsimon/calvin/blob/develop/docs/integrations/HOME_AUTOMATION.md),
   the [screen power mode design](https://github.com/osterbergsimon/calvin/blob/develop/docs/superpowers/specs/2026-11-21-screen-power-mode-design.md)
   (decisions 1 to 8: the modes, the command, the 409s, the answer), its
@@ -36,12 +37,11 @@ settings page, warnings, unavailable messages and thrown errors. This design nam
 points at the UI spec section; it does not restate or change the copy. Where the UI spec leaves a
 mechanism to the planning lane, the decision is here.
 
-**The UI spec predates Calvin's modes.** Its §4 to §5 still describe holds, a "schedule paused"
-sensor and a back-to-schedule action, and its §3.1 does not mention External. Until the Calvin design
-lead revises it, this design drops the strings that no longer apply and marks each new or changed
-string **proposed**. A proposed string is a placeholder in the same voice, not final copy: the
-design lead approves or rewrites it before Part 4 or Part 5 ships it ([open questions](#open-questions-for-the-owner)).
-Strings that Calvin sends (its 409 messages) are shown as Calvin sends them.
+**The UI spec is the copy source for the screen power modes too.** The design lead's revision (Calvin
+PR 398) removed the hold, the "schedule paused" sensor and the back-to-schedule action, and added
+the Screen power state, the External condition, the mode-aware all-screens hints and the External
+note. The strings in this design that come from it are quoted from there, not written here. Strings
+that Calvin sends (its 409 messages) are shown as Calvin sends them.
 
 ## Intent
 
@@ -208,7 +208,7 @@ assets/                         app icon and images
 | `alarm_calvin_offline` | custom boolean, `getable`, `setable: false` | `!online` | No |
 
 **What an on or off does depends on the screen's mode**, and the device says so in the
-description of `calvin_screen_power` (proposed text below):
+description of `calvin_screen_power` (UI §4.1; text below):
 
 | Mode | Homey on / off | Shown on the device |
 |---|---|---|
@@ -218,18 +218,17 @@ description of `calvin_screen_power` (proposed text below):
 
 Titles: `alarm_calvin_offline` and the insights titles of `onoff` and `alarm_calvin_offline` are UI
 §4.1 as they stand. `onoff` keeps Homey's own title; only its insights titles are set, in the
-driver's `capabilitiesOptions`. **Proposed** for `calvin_screen_power` (Calvin's own labels from
-its UI spec §2.1 for the title and the values; the description and the insights title are new):
+driver's `capabilitiesOptions`. For `calvin_screen_power`, from UI §4.1:
 
-| Element | Proposed text |
+| Element | Text |
 |---|---|
 | Title | **Screen power** |
-| Values | **Schedule**, **Always on**, **External** |
-| `desc` | **Set in Calvin. In Schedule, turning the screen on or off lasts until its next scheduled change. In Always on, it can't be turned off. In External, it lasts until the next on or off.** |
-| Insights title | **Screen power changed** |
+| Values | **Schedule**, **Always on**, **External** (Calvin's own labels) |
+| `desc` | **Chosen in Calvin › Settings › Screens. In Schedule, Homey's on or off lasts until the next scheduled change. In Always on, Homey can't switch the screen. In External, Homey's on or off stays until the next one.** |
+| Insights title | `insightsTitle` **Screen power changed** (Homey logs insights for numbers and booleans; if it records none for an enum, the title is unused) |
 
-If Homey does not show a capability's `desc` on the device, the same sentences go in the README
-(plan, Part 6 check). Homey generates no condition cards for the custom capabilities, hence
+If Homey does not show a capability's `desc` on the device, these sentences live in the README only
+(UI §4.1; plan, Part 6 check). Homey generates no condition cards for the custom capabilities, hence
 `is_set_to_external` and `is_offline` below. If Homey shows a raw id instead of the enum's titles,
 the values get plain `title` objects in the capability file; this is a manifest detail, not a
 copy change.
@@ -263,31 +262,32 @@ Ids, titles, inverted forms and hints: UI §5, verbatim. Every device card takes
 | `is_offline` | device condition | Run listener reads `alarm_calvin_offline` |
 | `all_on`, `all_off` | app actions | Loop the paired screens |
 
-`is_set_to_external` is **proposed** copy: title **!{{Is|Isn't}} set to External**, hint **Set to
-External means Homey, Home Assistant or a script with an API key turns the screen on and off.** (the
-hint is Calvin's own sentence for External, UI §2.1 of its mode spec). The flow cards for the old
+`is_set_to_external` (UI §5.2): title **!{{Is|Isn't}} set to External**, hint **External means
+Homey's on and off stay until the next one. Screen power is chosen in Calvin › Settings › Screens.**
+The flow cards for the old
 hold (`calvin_held_true`, `calvin_held_false`, `schedule_paused`, `back_to_schedule`,
 `all_back_to_schedule`) are gone.
 
 The app actions send one `PUT` per paired screen that is available, in sequence, and continue
-past a failure. **A screen the app last saw in Always on is skipped silently**: it is on by design
-and Calvin cannot switch it, so it gets no request and is in neither *n* nor *total* (the owner's
-call: counting it as failed every run would make the card look broken). *total* is every other
-paired screen; an unavailable screen gets no request and counts as failed, because it was not
-changed (my call). The mode is the one the last poll stored in `calvin_screen_power`. If that is
-stale (the screen was switched to Always on, or away from it, since the last poll), the answer
-decides: a `409` from a screen last seen in Schedule or External counts as failed, and `all_off`
-therefore still reports a Schedule or External screen that refuses. If any failed, the card throws
-UI §5.3's partial-failure message with *n* and *total*; the screens that worked stay changed. No
-paired screens, or only Always on screens: the card succeeds and sends nothing. With more than 30
-screens Calvin's change limit can stop the rest; they count as failed. The hints for these two
-cards say what the cards do in each mode (proposed copy below).
+past a failure. **A screen set to Always on is skipped silently** (UI §5.3): it is on by design and
+Calvin cannot switch it, so it gets no request, is not a failure and is not counted in *n* or
+*total*. A flow that runs every evening must not end in an error every evening. The app knows the
+mode from the last poll (`calvin_screen_power`). **A `409` `screen_power_always_on` from a stale
+poll** (the mode changed to Always on since) **is treated the same way**: skipped, left out of
+*total*, not failed. *total* is every other paired screen; an unavailable screen gets no request and
+counts as failed, because it was not changed (my call). Any other refusal counts as failed: a
+Schedule or External screen that refuses (for example `screen_power_external`, which the app cannot
+cause, or a failed request) is reported, and `all_off` therefore still reports it. If any failed,
+the card throws UI §5.3's partial-failure message with *n* and *total*; the screens that worked stay
+changed. No paired screens, or only Always on screens: the card succeeds and sends nothing. With
+more than 30 screens Calvin's change limit can stop the rest; they count as failed.
 
-**Proposed** hints for `all_on` and `all_off` (UI §5.3's with the mode added):
-**Turns every Calvin screen in Homey on. Screens in Schedule stay on until their next scheduled
-change, and screens in Always on can't be turned off.** and the same with off for `all_off`:
-**Turns every Calvin screen in Homey off. Screens in Schedule stay off until their next scheduled
-change, and screens in Always on can't be turned off.** Titles stay UI §5.3's.
+Hints, from UI §5.3 (titles **Turn all screens on** and **Turn all screens off**):
+
+- `all_on`: **Turns every Calvin screen in Homey on. Screens set to Schedule stay on until their
+  next scheduled change. Screens set to Always on are left as they are.**
+- `all_off`: **Turns every Calvin screen in Homey off. Screens set to Schedule stay off until their
+  next scheduled change. Screens set to Always on stay on.**
 
 ### Pairing, repair and the settings page
 
@@ -320,11 +320,12 @@ tokens }`. The view shows the message for that id under the form, or `Homey.aler
 `error.unknown`. The key is never sent back to the view.
 
 **Telling the person about External.** The `connect` view and the settings page each carry one
-note under the key field: **proposed** text **For full control, set each screen's Screen power to
-External in Calvin › Settings › Screens.** In Schedule a command from Homey only lasts until the
-screen's next scheduled change, and in Always on it is refused, so External is what a Homey user
-expects. The note is plain text with no link (a Homey view cannot open Calvin) and does not say
-"API". The README says the same and explains the three modes in one table.
+note under the key field (UI §3.1 and §6, locale key `connect.external_note`): **To let Homey's on
+and off stay until the next one, set Screen power to External for each screen in Calvin › Settings
+› Screens.** In Schedule a command from Homey only lasts until the screen's next scheduled change,
+and in Always on it is refused, so External is what a Homey user expects. The note is plain text
+with no link (a Homey view cannot open Calvin). The README says the same in plain paragraphs, as
+Athom's rule 1.3 allows no table (UI §2).
 
 **`list_devices`**: Calvin's screens that are not in Homey yet, from the check's screen list, named
 as above, not filtered by online state. Empty cases throw the UI §3.2 messages. The view title is
@@ -608,34 +609,28 @@ A fresh reader went through this design as the builder (24 points). How they wer
    The README names it as "Calvin <version> or newer", and the exact version is filled in at
    release time, when Calvin tags it. Open for the owner: should the app's first tag wait for that
    Calvin release?
-2. **Settled: the `409` body** is `{"detail": {"code", "message"}}`, as `_conflict` in Calvin's
-   `backend/app/api/routes/kiosks.py` raises it (see Calvin API used).
-3. **Proposed copy.** These strings are mine, not the design lead's, and the UI spec rule says not to
-   invent copy. They need the design lead's yes or a rewrite before Parts 4 and 5 ship them:
-   the `calvin_screen_power` title, values, `desc` and insights title; the
-   `is_set_to_external` title and hint; the `all_on` and `all_off` hints; and the External note on
-   the `connect` view and the settings page. Also: should the design lead revise the UI spec's §4
-   to §5 (they still describe holds), so the plan can cite it again instead of this design?
-4. **Settled: "All screens" and Always on.** `all_on` and `all_off` skip screens last seen in Always
-   on silently, and still report a Schedule or External screen that refuses (see Flow cards).
+Settled, no longer questions: the `409` body is `{"detail": {"code", "message"}}`, as `_conflict` in
+Calvin's `backend/app/api/routes/kiosks.py` raises it (see Calvin API used); `all_on` and `all_off`
+skip Always on screens silently (see Flow cards); and the design lead has ruled on the copy (UI spec,
+Calvin PR 398).
 
 ## Revision notes
 
 Revised 2026-11-22 for Calvin's screen power modes. What changed, by section:
 
 - **Header, sources, user-facing text:** names Calvin's mode design and UI spec as sources; says the
-  Homey UI spec predates the modes and marks new or changed strings **proposed**.
+  Homey UI spec is now the revised one (Calvin PR 398), and the strings new to the modes come from it.
 - **Intent, goals, non-goals, anti-goals, constraints:** no more hold, "schedule paused" or back to
   schedule; the mode is shown; the app never changes a mode, never retries a `409`; who set a
   command and `until` are not shown.
 - **Approaches:** rows for on/off meaning and held replaced; a row for the mode added.
 - **App structure and capabilities:** `calvin_held` and `button.back_to_schedule` removed;
   `calvin_screen_power` (read-only enum) added, with what on and off mean in each mode and the
-  proposed device text; the mapping now reads `mode`, and no longer reads `held` or `agentHolds`
+  device text from UI §4.1; the mapping now reads `mode`, and no longer reads `held` or `agentHolds`
   (the old-software warning is gone).
 - **Flow cards:** `calvin_held_true/false`, `schedule_paused`, `back_to_schedule` and
-  `all_back_to_schedule` removed; `is_set_to_external` added; the all-screens cards skip Always on screens and count another refusal
-  as failed and get mode-aware hints.
+  `all_back_to_schedule` removed; `is_set_to_external` added; the all-screens cards skip Always on screens (also on a stale-poll `409`) and count another
+  refusal as failed and get mode-aware hints.
 - **Pairing, repair and settings page:** a note under the key field tells the person to set each
   screen to External.
 - **Connection check:** "too old" now means a Calvin without `mode` and `screenPower`; the
