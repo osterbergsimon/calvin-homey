@@ -270,14 +270,18 @@ hold (`calvin_held_true`, `calvin_held_false`, `schedule_paused`, `back_to_sched
 `all_back_to_schedule`) are gone.
 
 The app actions send one `PUT` per paired screen that is available, in sequence, and continue
-past a failure. *total* is every paired screen; an unavailable screen gets no request and counts as
-failed, because it was not changed (my call). **A screen whose mode refuses the command (`409`)
-counts as failed too**, for the same reason: it was not changed. If any failed, the card throws
+past a failure. **A screen the app last saw in Always on is skipped silently**: it is on by design
+and Calvin cannot switch it, so it gets no request and is in neither *n* nor *total* (the owner's
+call: counting it as failed every run would make the card look broken). *total* is every other
+paired screen; an unavailable screen gets no request and counts as failed, because it was not
+changed (my call). The mode is the one the last poll stored in `calvin_screen_power`. If that is
+stale (the screen was switched to Always on, or away from it, since the last poll), the answer
+decides: a `409` from a screen last seen in Schedule or External counts as failed, and `all_off`
+therefore still reports a Schedule or External screen that refuses. If any failed, the card throws
 UI §5.3's partial-failure message with *n* and *total*; the screens that worked stay changed. No
-paired screens: the card succeeds and sends nothing. With more than 30 screens Calvin's change
-limit can stop the rest; they count as failed. A flow that mixes screens in Always on with the rest
-therefore ends with an error each run; the hints for these two cards say what the cards do in each
-mode (proposed copy below, and an open question).
+paired screens, or only Always on screens: the card succeeds and sends nothing. With more than 30
+screens Calvin's change limit can stop the rest; they count as failed. The hints for these two
+cards say what the cards do in each mode (proposed copy below).
 
 **Proposed** hints for `all_on` and `all_off` (UI §5.3's with the mode added):
 **Turns every Calvin screen in Homey on. Screens in Schedule stay on until their next scheduled
@@ -517,9 +521,11 @@ What a `PUT` does follows `mode`: in Schedule, `on`/`off` stand until the next s
 refused (`409 screen_power_external`); in Always on, `on`/`off` are refused (`409
 screen_power_always_on`) and `schedule` changes nothing. Calvin's two messages are **This screen
 is set to External. Send on or off.** and **This screen is set to Always on. Choose Schedule or
-External to switch it.** Changing the mode ends the command in force. The `409` body is assumed to
-be `{"detail": {"code", "message"}}` like Calvin's other errors; Calvin's contract snapshot does not
-list error bodies, so the fake follows that shape and the owner confirms it (open question 2).
+External to switch it.** Changing the mode ends the command in force. The `409` body is
+`{"detail": {"code": "screen_power_external"|"screen_power_always_on", "message": "…"}}`: Calvin
+raises both as `HTTPException(detail={code, message})` in `_conflict`, in
+`backend/app/api/routes/kiosks.py` on `develop` (confirmed by the owner's lane). Calvin's contract
+snapshot does not list error bodies, so the fake follows this shape.
 Error bodies are `{"detail": {"code", "message"}}`, except `{"detail": "<text>"}` for `404`/`400`
 from the screen-power handler and a plain-text `400` from the Host check. The app keys on the
 status, then `code`, and on the exact `"Unknown kiosk"` detail.
@@ -597,25 +603,21 @@ A fresh reader went through this design as the builder (24 points). How they wer
 
 ## Open questions for the owner
 
-1. **Minimum Calvin version.** Screen power modes are on Calvin `develop`, not on `main` (last tag
-   `0.1.0-rc.3`). Which Calvin release should the README name as the minimum, and should the app's
-   first tag wait for it?
-2. **The `409` answer's body.** The design assumes `{"detail": {"code", "message"}}`, like Calvin's
-   other errors, because Calvin's contract snapshot does not list error bodies. Can someone with a
-   Calvin on `develop` confirm it (one `PUT {"power":"off"}` to a screen in Always on, from a
-   machine that is not the Homey)? If the body differs, the client's one `409` branch and the fake
-   change; nothing else does.
+1. **Minimum Calvin version.** The minimum is the first Calvin release that includes screen power
+   modes. That release does not exist yet (modes are on `develop`; the last tag is `0.1.0-rc.3`).
+   The README names it as "Calvin <version> or newer", and the exact version is filled in at
+   release time, when Calvin tags it. Open for the owner: should the app's first tag wait for that
+   Calvin release?
+2. **Settled: the `409` body** is `{"detail": {"code", "message"}}`, as `_conflict` in Calvin's
+   `backend/app/api/routes/kiosks.py` raises it (see Calvin API used).
 3. **Proposed copy.** These strings are mine, not the design lead's, and the UI spec rule says not to
    invent copy. They need the design lead's yes or a rewrite before Parts 4 and 5 ship them:
    the `calvin_screen_power` title, values, `desc` and insights title; the
    `is_set_to_external` title and hint; the `all_on` and `all_off` hints; and the External note on
    the `connect` view and the settings page. Also: should the design lead revise the UI spec's §4
    to §5 (they still describe holds), so the plan can cite it again instead of this design?
-4. **"All screens" and Always on.** A screen in Always on refuses both on and off, so `all_on` and
-   `all_off` count it as failed and the card throws the partial-failure message every run. Should
-   those cards skip Always on screens silently instead (the app already knows the mode from the
-   last poll), or is the error the right way to tell the person their flow cannot work on that
-   screen? The design currently reports it.
+4. **Settled: "All screens" and Always on.** `all_on` and `all_off` skip screens last seen in Always
+   on silently, and still report a Schedule or External screen that refuses (see Flow cards).
 
 ## Revision notes
 
@@ -632,7 +634,7 @@ Revised 2026-11-22 for Calvin's screen power modes. What changed, by section:
   proposed device text; the mapping now reads `mode`, and no longer reads `held` or `agentHolds`
   (the old-software warning is gone).
 - **Flow cards:** `calvin_held_true/false`, `schedule_paused`, `back_to_schedule` and
-  `all_back_to_schedule` removed; `is_set_to_external` added; the all-screens cards count a `409`
+  `all_back_to_schedule` removed; `is_set_to_external` added; the all-screens cards skip Always on screens and count another refusal
   as failed and get mode-aware hints.
 - **Pairing, repair and settings page:** a note under the key field tells the person to set each
   screen to External.
@@ -642,5 +644,6 @@ Revised 2026-11-22 for Calvin's screen power modes. What changed, by section:
   retry, a refresh of the device afterwards; the `ScreenPowerView` and list row as the modes
   define them; what a `PUT` means per mode.
 - **Security, deferred expansions, open questions:** presence and the leaked-key text rewritten; the
-  hold row becomes "who set the command, and until when"; questions 2 to 4 added, question 1
-  unchanged.
+  hold row becomes "who set the command, and until when"; questions 2 to 4 added (2 and 4
+  settled by the owner's lane, 1 reworded: the minimum is the first Calvin release with modes, version
+  to fill in at release).
